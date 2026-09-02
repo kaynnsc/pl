@@ -28,7 +28,7 @@ const DEFAULT_ITEMS = [
   { id: uid(), category: "Pastry", name: "Banana bread", description: "Walnut, brown butter", price: 4.25, unit: "" },
 ];
 
-const DEFAULT_STATE = { title: "The Corner Press", subtitle: "Coffee & pastry", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
+const DEFAULT_STATE = { title: "The Corner Press", subtitle: "Apk Premium", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
 
 function currency(n) {
   const num = Number(n);

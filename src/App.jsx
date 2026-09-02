@@ -4,11 +4,14 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   Search, Moon, Sun, User, Plus, Trash2, Upload, Download, X, Check,
-  Sheet, Loader2, LayoutGrid, List, Settings, Lock, Unlock,
+  Sheet, Loader2, LayoutGrid, List, Settings, Lock, Unlock, FileText,
 } from "lucide-react";
 
 const FONT_LINK = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&display=swap');
+html, body, #root { margin: 0; padding: 0; width: 100%; }
+* { box-sizing: border-box; }
+body { overflow-x: hidden; }
 `;
 
 const DEFAULT_PASSWORD = "admin123";
@@ -17,22 +20,21 @@ const THEME_KEY = "pricelist-theme";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-const emptyItem = (category) => ({ id: uid(), category, name: "New item", description: "", price: 0, unit: "" });
+const emptyItem = (category) => ({ id: uid(), category, name: "New item", description: "", price: 0, unit: "", terms: "" });
 
 const DEFAULT_ITEMS = [
-  { id: uid(), category: "Espresso", name: "Espresso", description: "Single shot", price: 3.5, unit: "" },
-  { id: uid(), category: "Espresso", name: "Cortado", description: "Espresso, steamed milk", price: 4.5, unit: "" },
-  { id: uid(), category: "Filter", name: "Pour over", description: "Rotating single origin", price: 5.0, unit: "" },
-  { id: uid(), category: "Filter", name: "Cold brew", description: "Steeped 18 hours", price: 4.75, unit: "" },
-  { id: uid(), category: "Pastry", name: "Almond croissant", description: "Baked daily", price: 4.75, unit: "" },
-  { id: uid(), category: "Pastry", name: "Banana bread", description: "Walnut, brown butter", price: 4.25, unit: "" },
+  { id: uid(), category: "Streaming Apps", name: "Netflix 1 hari", description: "1 Profil, 1 User", price: 6000, unit: "hari", terms: "Akun sharing, dilarang ganti password. Garansi selama masa aktif." },
+  { id: uid(), category: "Streaming Apps", name: "Netflix 1 bulan", description: "1 Profil, 1 User", price: 45000, unit: "bulan", terms: "Akun sharing, dilarang ganti password. Garansi selama masa aktif." },
+  { id: uid(), category: "Education Apps", name: "Canva Pro 1 bulan", description: "Akun pribadi", price: 15000, unit: "bulan", terms: "Login hanya di 1 perangkat. Tidak untuk dibagikan." },
 ];
 
-const DEFAULT_STATE = { title: "The Corner Press", subtitle: "Apk Premium", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
+const DEFAULT_STATE = { title: "GinzaCo", subtitle: "Aplikasi Premium", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
 
-function currency(n) {
+function formatIDR(n) {
   const num = Number(n);
-  return Number.isNaN(num) ? "0.00" : num.toFixed(2);
+  const safe = Number.isNaN(num) ? 0 : num;
+  const formatted = safe.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `Rp ${formatted}`;
 }
 
 function parseCSV(text) {
@@ -61,25 +63,35 @@ function rowsToItems(rows) {
     const category = row.category || row.section || "Uncategorized";
     const name = row.name || row.item || row.product;
     if (!name) return null;
-    return { id: uid(), category, name, description: row.description || row.notes || "", price: parseFloat(row.price || row.cost || 0) || 0, unit: row.unit || "" };
+    return {
+      id: uid(),
+      category,
+      name,
+      description: row.description || row.notes || "",
+      price: parseFloat(row.price || row.cost || 0) || 0,
+      unit: row.unit || "",
+      terms: row.terms || row.tnc || row["tnc/terms"] || row.syarat || "",
+    };
   }).filter(Boolean);
 }
 
 // ---- theme tokens ----
 const THEMES = {
   light: {
-    bg: "#F7F4EC", bgElevated: "#FFFFFF", card: "#EFEBE0", cardBorder: "#E3DDCB",
-    ink: "#22261F", inkMuted: "#5B5F52", inkFaint: "#9A9782", accent: "#28463D",
-    accentSoft: "#DCE6E1", price: "#A9793A", danger: "#A8402E", dangerSoft: "#FBEBE7",
-    chipBg: "#EFEBE0", chipActiveBg: "#28463D", chipActiveText: "#F7F4EC",
-    navBg: "#FFFFFF", navBorder: "#E3DDCB", overlay: "rgba(34,38,31,0.4)",
+    bg: "#EAF3FB", bgElevated: "#FFFFFF", card: "#F2F8FD", cardBorder: "#D6E6F3",
+    ink: "#132B42", inkMuted: "#4E7189", inkFaint: "#93AEC3", accent: "#1F6FA8",
+    accentSoft: "#DCEBF7", price: "#B9762A", danger: "#C24A3D", dangerSoft: "#FBEAE7",
+    chipBg: "#DCEBF7", chipActiveBg: "#1F6FA8", chipActiveText: "#F4FAFF",
+    navBg: "#FFFFFF", navBorder: "#D6E6F3", overlay: "rgba(19,43,66,0.4)",
+    isDark: false,
   },
   dark: {
-    bg: "#171A15", bgElevated: "#20241D", card: "#20241D", cardBorder: "#2E332A",
-    ink: "#EFEDE3", inkMuted: "#A9AB9C", inkFaint: "#71725f", accent: "#7FBBA6",
-    accentSoft: "#243430", price: "#D6A85F", danger: "#E08573", dangerSoft: "#3A2420",
-    chipBg: "#242820", chipActiveBg: "#7FBBA6", chipActiveText: "#171A15",
-    navBg: "#20241D", navBorder: "#2E332A", overlay: "rgba(0,0,0,0.55)",
+    bg: "#0A1220", bgElevated: "#101B2D", card: "#101B2D", cardBorder: "#1E3049",
+    ink: "#E7EEF7", inkMuted: "#93ADC5", inkFaint: "#57708A", accent: "#4098C7",
+    accentSoft: "#152840", price: "#DDA85C", danger: "#E2695C", dangerSoft: "#2A1A18",
+    chipBg: "#152840", chipActiveBg: "#4098C7", chipActiveText: "#08131F",
+    navBg: "#0D1826", navBorder: "#1E3049", overlay: "rgba(0,0,0,0.6)",
+    isDark: true,
   },
 };
 
@@ -93,7 +105,7 @@ export default function App() {
   });
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
-  const [viewMode, setViewMode] = useState("list"); // list | grid
+  const [viewMode, setViewMode] = useState("list");
   const [showLogin, setShowLogin] = useState(false);
   const [pwInput, setPwInput] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -107,6 +119,9 @@ export default function App() {
   const [showPwChange, setShowPwChange] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [showAdminSheet, setShowAdminSheet] = useState(false);
+  const [termsItem, setTermsItem] = useState(null); // item being viewed (public) or edited (admin) for terms
+  const [editingTerms, setEditingTerms] = useState(false);
+  const [termsDraft, setTermsDraft] = useState("");
   const fileInputRef = useRef(null);
   const editingRef = useRef(false);
 
@@ -114,7 +129,9 @@ export default function App() {
 
   useEffect(() => {
     try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch (e) {}
-  }, [dark]);
+    document.body.style.background = T.bg;
+    document.documentElement.style.background = T.bg;
+  }, [dark, T.bg]);
 
   const flashToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
 
@@ -170,6 +187,11 @@ export default function App() {
     } else setLoginError("That password doesn't match.");
   };
 
+  const handleAvatarClick = () => {
+    if (isAdmin) setShowAdminSheet(true);
+    else setShowLogin(true);
+  };
+
   const updateItem = (id, patch) => persist({ ...state, items: items.map((it) => (it.id === id ? { ...it, ...patch } : it)) });
   const deleteItem = (id) => persist({ ...state, items: items.filter((it) => it.id !== id) });
   const addItem = (category) => persist({ ...state, items: [...items, emptyItem(category === "All" ? "General" : category)] });
@@ -181,9 +203,9 @@ export default function App() {
   const addCategory = () => persist({ ...state, items: [...items, emptyItem("New category")] });
 
   const exportExcel = () => {
-    const rows = items.map((it) => ({ Category: it.category, Name: it.name, Description: it.description, Price: it.price, Unit: it.unit }));
+    const rows = items.map((it) => ({ Category: it.category, Name: it.name, Description: it.description, Price: it.price, Unit: it.unit, Terms: it.terms || "" }));
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 32 }, { wch: 10 }, { wch: 10 }];
+    ws["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 40 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Price list");
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -208,7 +230,7 @@ export default function App() {
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
         const normalized = rows.map((r) => { const lower = {}; Object.keys(r).forEach((k) => (lower[k.toLowerCase()] = r[k])); return lower; });
         const newItems = rowsToItems(normalized);
-        if (newItems.length === 0) setImportError("No rows recognized. Expect columns: Category, Name, Description, Price, Unit.");
+        if (newItems.length === 0) setImportError("No rows recognized. Expect columns: Category, Name, Description, Price, Unit, Terms.");
         else { persist({ ...state, items: newItems }); setShowImport(false); flashToast(`Imported ${newItems.length} items`); }
       } catch (err) { setImportError("Couldn't read that file. Make sure it's a valid .xlsx or .csv."); }
       finally { setImportBusy(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
@@ -234,12 +256,22 @@ export default function App() {
     if (!pasteText.trim()) return;
     setImportError("");
     const newItems = rowsToItems(parseCSV(pasteText.trim()));
-    if (newItems.length === 0) setImportError("Couldn't find recognizable columns. First row should have headers like Category, Name, Price.");
+    if (newItems.length === 0) setImportError("Couldn't find recognizable columns. First row should have headers like Category, Name, Price, Terms.");
     else { persist({ ...state, items: newItems }); setShowImport(false); setPasteText(""); flashToast(`Imported ${newItems.length} items`); }
   };
 
+  const openTerms = (item) => { setTermsItem(item); setTermsDraft(item.terms || ""); setEditingTerms(false); };
+  const saveTerms = () => {
+    if (termsItem) {
+      updateItem(termsItem.id, { terms: termsDraft });
+      setTermsItem({ ...termsItem, terms: termsDraft });
+      setEditingTerms(false);
+      flashToast("Terms updated");
+    }
+  };
+
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Work Sans', sans-serif", color: T.ink, transition: "background 0.2s, color 0.2s" }}>
+    <div style={{ minHeight: "100vh", width: "100%", background: T.bg, fontFamily: "'Work Sans', sans-serif", color: T.ink, transition: "background 0.2s, color 0.2s" }}>
       <style>{FONT_LINK}</style>
 
       {connectionError && (
@@ -248,12 +280,16 @@ export default function App() {
         </div>
       )}
 
-      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 90, width: "100%" }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 20px 14px" }}>
-          <div style={{ width: 38, height: 38, borderRadius: "50%", background: T.card, border: `1px solid ${T.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkMuted }}>
+          <button
+            onClick={handleAvatarClick}
+            title={isAdmin ? "Admin tools" : "Admin login"}
+            style={{ width: 38, height: 38, borderRadius: "50%", background: T.card, border: `1px solid ${T.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: isAdmin ? T.accent : T.inkMuted, cursor: "pointer", flexShrink: 0 }}
+          >
             <User size={18} />
-          </div>
+          </button>
 
           {editingTitle && isAdmin ? (
             <input
@@ -273,7 +309,7 @@ export default function App() {
             </h1>
           )}
 
-          <button onClick={() => setDark(!dark)} style={{ width: 38, height: 38, borderRadius: "50%", background: T.card, border: `1px solid ${T.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink, cursor: "pointer" }} title="Toggle dark mode">
+          <button onClick={() => setDark(!dark)} style={{ width: 38, height: 38, borderRadius: "50%", background: T.card, border: `1px solid ${T.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink, cursor: "pointer", flexShrink: 0 }} title="Toggle dark mode">
             {dark ? <Sun size={17} /> : <Moon size={17} />}
           </button>
         </div>
@@ -325,9 +361,9 @@ export default function App() {
           )}
           {filteredItems.map((it) =>
             viewMode === "grid" ? (
-              <GridCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
+              <GridCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
             ) : (
-              <ListCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
+              <ListCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
             )
           )}
         </div>
@@ -339,23 +375,21 @@ export default function App() {
             </button>
           </div>
         )}
+
+        <div style={{ marginTop: 30, padding: "0 20px", fontSize: 11.5, color: T.inkFaint, textAlign: "center" }}>
+          Tap any item to view its terms & conditions before ordering.
+        </div>
       </div>
 
-      {/* bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.navBg, borderTop: `1px solid ${T.navBorder}`, display: "flex", justifyContent: "space-around", padding: "12px 20px calc(12px + env(safe-area-inset-bottom))", zIndex: 20 }}>
-        <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")} style={navBtnStyle(T)}>
-          <List size={19} />
-        </button>
-        <button onClick={() => (isAdmin ? setShowAdminSheet(true) : setShowLogin(true))} style={navBtnStyle(T, isAdmin)}>
-          {isAdmin ? <Unlock size={19} /> : <Lock size={19} />}
-        </button>
-        <button onClick={exportExcel} style={navBtnStyle(T)}>
-          <Download size={19} />
+      {/* bottom nav — just the view toggle now */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.navBg, borderTop: `1px solid ${T.navBorder}`, display: "flex", justifyContent: "center", padding: "12px 20px calc(12px + env(safe-area-inset-bottom))", zIndex: 20 }}>
+        <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")} style={navBtnStyle(T, true)}>
+          {viewMode === "list" ? <LayoutGrid size={19} /> : <List size={19} />}
         </button>
       </div>
 
       {toast && (
-        <div style={{ position: "fixed", bottom: 74, left: "50%", transform: "translateX(-50%)", background: T.accent, color: dark ? T.bg : "#F7F4EC", padding: "10px 18px", borderRadius: 6, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6, zIndex: 30 }}>
+        <div style={{ position: "fixed", bottom: 74, left: "50%", transform: "translateX(-50%)", background: T.accent, color: T.isDark ? "#08131F" : "#F4FAFF", padding: "10px 18px", borderRadius: 6, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6, zIndex: 30 }}>
           <Check size={14} /> {toast}
         </div>
       )}
@@ -420,11 +454,51 @@ export default function App() {
             </div>
             <div style={{ borderTop: `1px solid ${T.cardBorder}`, paddingTop: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Or paste cells directly</div>
-              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"Category\tName\tDescription\tPrice\tUnit"} rows={5} style={{ ...inputStyle(T), fontFamily: "monospace", fontSize: 12, resize: "vertical" }} />
+              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"Category\tName\tDescription\tPrice\tUnit\tTerms"} rows={5} style={{ ...inputStyle(T), fontFamily: "monospace", fontSize: 12, resize: "vertical" }} />
               <button onClick={importFromPaste} style={{ ...primaryBtnStyle(T), marginTop: 8 }}>Import pasted data</button>
             </div>
             {importError && <p style={{ color: T.danger, fontSize: 12.5, background: T.dangerSoft, padding: "8px 10px", borderRadius: 4 }}>{importError}</p>}
-            <p style={{ fontSize: 11, color: T.inkFaint }}>Columns (any order): Category, Name, Description, Price, Unit. Importing replaces the current list.</p>
+            <p style={{ fontSize: 11, color: T.inkFaint }}>Columns (any order): Category, Name, Description, Price, Unit, Terms. Importing replaces the current list.</p>
+          </div>
+        </Modal>
+      )}
+
+      {termsItem && (
+        <Modal T={T} onClose={() => { setTermsItem(null); setEditingTerms(false); }} title={termsItem.name}>
+          <div style={{ marginBottom: 12 }}>
+            {termsItem.description && <p style={{ fontSize: 13, color: T.inkMuted, marginBottom: 6 }}>{termsItem.description}</p>}
+            <p style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: T.price, margin: 0 }}>
+              {formatIDR(termsItem.price)}{termsItem.unit && <span style={{ fontSize: 13, color: T.inkFaint }}> /{termsItem.unit}</span>}
+            </p>
+          </div>
+          <div style={{ borderTop: `1px solid ${T.cardBorder}`, paddingTop: 12 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 8, color: T.inkMuted, display: "flex", alignItems: "center", gap: 6 }}>
+              <FileText size={13} /> Terms & Conditions
+            </div>
+            {isAdmin && editingTerms ? (
+              <>
+                <textarea
+                  autoFocus
+                  value={termsDraft}
+                  onChange={(e) => setTermsDraft(e.target.value)}
+                  rows={6}
+                  placeholder="e.g. Garansi 7 hari, tidak untuk digunakan bersamaan di lebih dari 1 perangkat..."
+                  style={{ ...inputStyle(T), width: "100%", fontSize: 13, resize: "vertical" }}
+                />
+                <button onClick={saveTerms} style={{ ...primaryBtnStyle(T), marginTop: 10 }}>Save terms</button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13.5, color: T.ink, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {termsItem.terms || "No terms have been set for this item yet."}
+                </p>
+                {isAdmin && (
+                  <button onClick={() => setEditingTerms(true)} style={ghostBtnStyle(T)}>
+                    <FileText size={13} /> Edit terms
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </Modal>
       )}
@@ -432,45 +506,57 @@ export default function App() {
   );
 }
 
-function ListCard({ item, T, isAdmin, onChange, onDelete, onFocusStart, onFocusEnd }) {
+function ListCard({ item, T, isAdmin, onChange, onDelete, onOpenTerms, onFocusStart, onFocusEnd }) {
   if (!isAdmin) {
     return (
-      <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <div
+        onClick={onOpenTerms}
+        style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, cursor: "pointer" }}
+      >
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 500 }}>{item.name}</div>
           {item.description && <div style={{ fontSize: 12.5, color: T.inkMuted, marginTop: 2 }}>{item.description}</div>}
         </div>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: T.price, whiteSpace: "nowrap" }}>
-          ${currency(item.price)}{item.unit && <span style={{ fontSize: 11.5, color: T.inkFaint }}> /{item.unit}</span>}
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, color: T.price, whiteSpace: "nowrap", textAlign: "right" }}>
+          {formatIDR(item.price)}{item.unit && <div style={{ fontSize: 11, color: T.inkFaint, fontFamily: "'Work Sans', sans-serif" }}>/{item.unit}</div>}
         </div>
       </div>
     );
   }
   return (
     <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 10, display: "flex", gap: 6, alignItems: "center" }}>
-      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 28%", fontSize: 13 }} placeholder="Name" />
-      <input defaultValue={item.description} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ description: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 28%", fontSize: 12 }} placeholder="Description" />
-      <input defaultValue={item.price} type="number" step="0.01" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), width: 66, fontSize: 12 }} placeholder="Price" />
-      <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }}><Trash2 size={14} /></button>
+      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 24%", fontSize: 13 }} placeholder="Name" />
+      <input defaultValue={item.description} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ description: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 24%", fontSize: 12 }} placeholder="Description" />
+      <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), width: 78, fontSize: 12 }} placeholder="Price" />
+      <button onClick={onOpenTerms} style={iconBtnStyle(T)} title="Edit terms"><FileText size={14} /></button>
+      <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }} title="Delete item"><Trash2 size={14} /></button>
     </div>
   );
 }
 
-function GridCard({ item, T, isAdmin, onChange, onDelete, onFocusStart, onFocusEnd }) {
+function GridCard({ item, T, isAdmin, onChange, onDelete, onOpenTerms, onFocusStart, onFocusEnd }) {
   if (!isAdmin) {
     return (
-      <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 6, minHeight: 96 }}>
+      <div
+        onClick={onOpenTerms}
+        style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 6, minHeight: 100, cursor: "pointer" }}
+      >
         <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
         {item.description && <div style={{ fontSize: 11.5, color: T.inkMuted, flex: 1 }}>{item.description}</div>}
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, color: T.price }}>${currency(item.price)}{item.unit && <span style={{ fontSize: 11, color: T.inkFaint }}> /{item.unit}</span>}</div>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 14, color: T.price }}>
+          {formatIDR(item.price)}{item.unit && <span style={{ fontSize: 11, color: T.inkFaint, fontFamily: "'Work Sans', sans-serif" }}> /{item.unit}</span>}
+        </div>
       </div>
     );
   }
   return (
     <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
       <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), fontSize: 12 }} placeholder="Name" />
-      <input defaultValue={item.price} type="number" step="0.01" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), fontSize: 12 }} placeholder="Price" />
-      <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger, alignSelf: "flex-end" }}><Trash2 size={13} /></button>
+      <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), fontSize: 12 }} placeholder="Price" />
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <button onClick={onOpenTerms} style={iconBtnStyle(T)} title="Edit terms"><FileText size={13} /></button>
+        <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }} title="Delete item"><Trash2 size={13} /></button>
+      </div>
     </div>
   );
 }
@@ -502,7 +588,7 @@ function iconBtnStyle(T) {
   return { display: "flex", alignItems: "center", justifyContent: "center", padding: 5, borderRadius: 5, border: "none", background: "transparent", cursor: "pointer", color: T.inkMuted };
 }
 function primaryBtnStyle(T) {
-  return { background: T.accent, color: T.bg === "#171A15" ? "#171A15" : "#F7F4EC", border: "none", borderRadius: 6, padding: "9px 16px", fontSize: 13.5, cursor: "pointer", fontFamily: "'Work Sans', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 };
+  return { background: T.accent, color: T.isDark ? "#08131F" : "#F4FAFF", border: "none", borderRadius: 6, padding: "9px 16px", fontSize: 13.5, cursor: "pointer", fontFamily: "'Work Sans', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 };
 }
 function inputStyle(T) {
   return { border: `1px solid ${T.cardBorder}`, borderRadius: 5, padding: "8px 10px", background: T.bgElevated, color: T.ink, outline: "none", fontFamily: "'Work Sans', sans-serif" };

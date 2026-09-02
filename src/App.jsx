@@ -346,9 +346,20 @@ export default function App() {
         </div>
 
         {/* subtitle + view toggle */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px 12px" }}>
-          <span style={{ fontSize: 12.5, color: T.inkFaint }}>{state.subtitle}</span>
-          <div style={{ display: "flex", gap: 4, background: T.card, borderRadius: 8, padding: 3 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px 12px", gap: 12 }}>
+          {isAdmin ? (
+            <input
+              value={state.subtitle}
+              onChange={(e) => setState({ ...state, subtitle: e.target.value })}
+              onBlur={() => persist(state)}
+              onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+              placeholder="Subtitle"
+              style={{ fontSize: 12.5, color: T.inkFaint, border: "none", borderBottom: `1px dashed ${T.cardBorder}`, background: "transparent", outline: "none", fontFamily: "'Work Sans', sans-serif", flex: 1, minWidth: 0 }}
+            />
+          ) : (
+            <span style={{ fontSize: 12.5, color: T.inkFaint }}>{state.subtitle}</span>
+          )}
+          <div style={{ display: "flex", gap: 4, background: T.card, borderRadius: 8, padding: 3, flexShrink: 0 }}>
             <button onClick={() => setViewMode("list")} style={miniToggleStyle(viewMode === "list", T)}><List size={14} /></button>
             <button onClick={() => setViewMode("grid")} style={miniToggleStyle(viewMode === "grid", T)}><LayoutGrid size={14} /></button>
           </div>

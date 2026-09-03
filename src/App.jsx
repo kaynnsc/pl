@@ -14,7 +14,7 @@ html, body, #root { margin: 0; padding: 0; width: 100%; }
 body { overflow-x: hidden; }
 `;
 
-const DEFAULT_PASSWORD = "admin123";
+const DEFAULT_PASSWORD = "kunaonmaneh123";
 const DOC_REF = doc(db, "pricelist", "main");
 const THEME_KEY = "pricelist-theme";
 
@@ -411,9 +411,6 @@ export default function App() {
           <input type="password" autoFocus value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} placeholder="Password" style={inputStyle(T)} />
           {loginError && <p style={{ color: T.danger, fontSize: 12.5, marginTop: 6 }}>{loginError}</p>}
           <button onClick={handleLogin} style={{ ...primaryBtnStyle(T), marginTop: 14 }}>Unlock</button>
-          <p style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 14 }}>
-            Default password is <code>admin123</code> until changed. Client-side lock only — see README for real access control.
-          </p>
         </Modal>
       )}
 

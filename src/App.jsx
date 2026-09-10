@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   Search, Moon, Sun, User, Plus, Trash2, Upload, Download, X, Check,
   Sheet, Loader2, LayoutGrid, List, Settings, Lock, Unlock, FileText,
+  Home, BookOpen, DatabaseBackup, HardDriveUpload,
 } from "lucide-react";
+import Guides from "./Guides";
 
 const FONT_LINK = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&display=swap');
@@ -14,8 +16,9 @@ html, body, #root { margin: 0; padding: 0; width: 100%; }
 body { overflow-x: hidden; }
 `;
 
-const DEFAULT_PASSWORD = "kunaonmaneh123";
+const DEFAULT_PASSWORD = "admin123";
 const DOC_REF = doc(db, "pricelist", "main");
+const GUIDES_DOC_REF = doc(db, "pricelist", "guides");
 const THEME_KEY = "pricelist-theme";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -28,7 +31,7 @@ const DEFAULT_ITEMS = [
   { id: uid(), category: "Education Apps", name: "Canva Pro 1 bulan", description: "Akun pribadi", price: 15000, unit: "bulan", terms: "Login hanya di 1 perangkat. Tidak untuk dibagikan." },
 ];
 
-const DEFAULT_STATE = { title: "GinzaCo", subtitle: "Aplikasi Premium", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
+const DEFAULT_STATE = { title: "GinzaCo", subtitle: "Digital products & subscriptions", password: DEFAULT_PASSWORD, items: DEFAULT_ITEMS };
 
 function formatIDR(n) {
   const num = Number(n);
@@ -103,6 +106,7 @@ export default function App() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem(THEME_KEY) === "dark"; } catch (e) { return false; }
   });
+  const [page, setPage] = useState("shop"); // shop | guides
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [viewMode, setViewMode] = useState("list");
@@ -123,6 +127,7 @@ export default function App() {
   const [editingTerms, setEditingTerms] = useState(false);
   const [termsDraft, setTermsDraft] = useState("");
   const fileInputRef = useRef(null);
+  const backupFileInputRef = useRef(null);
   const editingRef = useRef(false);
 
   const T = dark ? THEMES.dark : THEMES.light;
@@ -201,6 +206,55 @@ export default function App() {
   };
   const deleteCategory = (name) => persist({ ...state, items: items.filter((it) => it.category !== name) });
   const addCategory = () => persist({ ...state, items: [...items, emptyItem("New category")] });
+
+  const backupAll = async () => {
+    try {
+      const [mainSnap, guidesSnap] = await Promise.all([getDoc(DOC_REF), getDoc(GUIDES_DOC_REF)]);
+      const backup = {
+        type: "pricelist-backup",
+        exportedAt: new Date().toISOString(),
+        main: mainSnap.exists() ? mainSnap.data() : null,
+        guides: guidesSnap.exists() ? guidesSnap.data() : null,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pricelist-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      flashToast("Backup downloaded");
+    } catch (e) {
+      flashToast("Backup failed — check your connection");
+    }
+  };
+
+  const restoreFromBackupFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        if (parsed.type !== "pricelist-backup" || (!parsed.main && !parsed.guides)) {
+          flashToast("That doesn't look like a pricelist backup file");
+          return;
+        }
+        const confirmed = window.confirm(
+          `This will REPLACE all current pricelist items/settings${parsed.guides ? " and guides" : ""} with the backup from ${parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleString() : "an unknown date"}. This can't be undone. Continue?`
+        );
+        if (!confirmed) return;
+        if (parsed.main) await setDoc(DOC_REF, parsed.main);
+        if (parsed.guides) await setDoc(GUIDES_DOC_REF, parsed.guides);
+        flashToast("Restored from backup");
+      } catch (err) {
+        flashToast("Couldn't read that backup file");
+      } finally {
+        if (backupFileInputRef.current) backupFileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const exportExcel = () => {
     const rows = items.map((it) => ({ Category: it.category, Name: it.name, Description: it.description, Price: it.price, Unit: it.unit, Terms: it.terms || "" }));
@@ -314,88 +368,102 @@ export default function App() {
           </button>
         </div>
 
-        {/* search */}
-        <div style={{ padding: "0 20px 12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 999, padding: "10px 16px" }}>
-            <Search size={16} color={T.inkFaint} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search the menu"
-              style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 14, color: T.ink, fontFamily: "'Work Sans', sans-serif" }}
-            />
-          </div>
-        </div>
+        {page === "shop" && (
+          <>
+            {/* search */}
+            <div style={{ padding: "0 20px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 999, padding: "10px 16px" }}>
+                <Search size={16} color={T.inkFaint} />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search the menu"
+                  style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 14, color: T.ink, fontFamily: "'Work Sans', sans-serif" }}
+                />
+              </div>
+            </div>
 
-        {/* category chips */}
-        <div style={{ display: "flex", gap: 8, padding: "0 20px 18px", overflowX: "auto" }}>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              style={{
-                flexShrink: 0, padding: "7px 16px", borderRadius: 999, fontSize: 13, border: "none", cursor: "pointer",
-                fontFamily: "'Work Sans', sans-serif", fontWeight: 500,
-                background: activeCategory === cat ? T.chipActiveBg : T.chipBg,
-                color: activeCategory === cat ? T.chipActiveText : T.inkMuted,
-              }}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+            {/* category chips */}
+            <div style={{ display: "flex", gap: 8, padding: "0 20px 18px", overflowX: "auto" }}>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  style={{
+                    flexShrink: 0, padding: "7px 16px", borderRadius: 999, fontSize: 13, border: "none", cursor: "pointer",
+                    fontFamily: "'Work Sans', sans-serif", fontWeight: 500,
+                    background: activeCategory === cat ? T.chipActiveBg : T.chipBg,
+                    color: activeCategory === cat ? T.chipActiveText : T.inkMuted,
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
 
-        {/* subtitle + view toggle */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px 12px", gap: 12 }}>
-          {isAdmin ? (
-            <input
-              value={state.subtitle}
-              onChange={(e) => setState({ ...state, subtitle: e.target.value })}
-              onBlur={() => persist(state)}
-              onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-              placeholder="Subtitle"
-              style={{ fontSize: 12.5, color: T.inkFaint, border: "none", borderBottom: `1px dashed ${T.cardBorder}`, background: "transparent", outline: "none", fontFamily: "'Work Sans', sans-serif", flex: 1, minWidth: 0 }}
-            />
-          ) : (
-            <span style={{ fontSize: 12.5, color: T.inkFaint }}>{state.subtitle}</span>
-          )}
-          <div style={{ display: "flex", gap: 4, background: T.card, borderRadius: 8, padding: 3, flexShrink: 0 }}>
-            <button onClick={() => setViewMode("list")} style={miniToggleStyle(viewMode === "list", T)}><List size={14} /></button>
-            <button onClick={() => setViewMode("grid")} style={miniToggleStyle(viewMode === "grid", T)}><LayoutGrid size={14} /></button>
-          </div>
-        </div>
+            {/* subtitle + view toggle */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px 12px", gap: 12 }}>
+              {isAdmin ? (
+                <input
+                  value={state.subtitle}
+                  onChange={(e) => setState({ ...state, subtitle: e.target.value })}
+                  onBlur={() => persist(state)}
+                  onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                  placeholder="Subtitle"
+                  style={{ fontSize: 12.5, color: T.inkFaint, border: "none", borderBottom: `1px dashed ${T.cardBorder}`, background: "transparent", outline: "none", fontFamily: "'Work Sans', sans-serif", flex: 1, minWidth: 0 }}
+                />
+              ) : (
+                <span style={{ fontSize: 12.5, color: T.inkFaint }}>{state.subtitle}</span>
+              )}
+              <div style={{ display: "flex", gap: 4, background: T.card, borderRadius: 8, padding: 3, flexShrink: 0 }}>
+                <button onClick={() => setViewMode("list")} style={miniToggleStyle(viewMode === "list", T)}><List size={14} /></button>
+                <button onClick={() => setViewMode("grid")} style={miniToggleStyle(viewMode === "grid", T)}><LayoutGrid size={14} /></button>
+              </div>
+            </div>
 
-        {/* items */}
-        <div style={{ padding: "0 20px", display: viewMode === "grid" ? "grid" : "flex", gridTemplateColumns: viewMode === "grid" ? "1fr 1fr" : undefined, gap: 10, flexDirection: viewMode === "list" ? "column" : undefined }}>
-          {filteredItems.length === 0 && (
-            <div style={{ gridColumn: "1 / -1", textAlign: "center", color: T.inkFaint, fontSize: 13.5, padding: "30px 0" }}>No items match.</div>
-          )}
-          {filteredItems.map((it) =>
-            viewMode === "grid" ? (
-              <GridCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
-            ) : (
-              <ListCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
-            )
-          )}
-        </div>
+            {/* items */}
+            <div style={{ padding: "0 20px", display: viewMode === "grid" ? "grid" : "flex", gridTemplateColumns: viewMode === "grid" ? "1fr 1fr" : undefined, gap: 10, flexDirection: viewMode === "list" ? "column" : undefined }}>
+              {filteredItems.length === 0 && (
+                <div style={{ gridColumn: "1 / -1", textAlign: "center", color: T.inkFaint, fontSize: 13.5, padding: "30px 0" }}>No items match.</div>
+              )}
+              {filteredItems.map((it) =>
+                viewMode === "grid" ? (
+                  <GridCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
+                ) : (
+                  <ListCard key={it.id} item={it} T={T} isAdmin={isAdmin} onChange={(p) => updateItem(it.id, p)} onDelete={() => deleteItem(it.id)} onOpenTerms={() => openTerms(it)} onFocusStart={() => (editingRef.current = true)} onFocusEnd={() => (editingRef.current = false)} />
+                )
+              )}
+            </div>
 
-        {isAdmin && (
-          <div style={{ padding: "16px 20px 0" }}>
-            <button onClick={() => addItem(activeCategory)} style={{ ...ghostBtnStyle(T), width: "100%", justifyContent: "center" }}>
-              <Plus size={13} /> Add item to {activeCategory === "All" ? "General" : activeCategory}
-            </button>
-          </div>
+            {isAdmin && (
+              <div style={{ padding: "16px 20px 0" }}>
+                <button onClick={() => addItem(activeCategory)} style={{ ...ghostBtnStyle(T), width: "100%", justifyContent: "center" }}>
+                  <Plus size={13} /> Add item to {activeCategory === "All" ? "General" : activeCategory}
+                </button>
+              </div>
+            )}
+
+            <div style={{ marginTop: 30, padding: "0 20px", fontSize: 11.5, color: T.inkFaint, textAlign: "center" }}>
+              Tap any item to view its terms & conditions before ordering.
+            </div>
+          </>
         )}
 
-        <div style={{ marginTop: 30, padding: "0 20px", fontSize: 11.5, color: T.inkFaint, textAlign: "center" }}>
-          Tap any item to view its terms & conditions before ordering.
-        </div>
+        {page === "guides" && <Guides T={T} isAdmin={isAdmin} flashToast={flashToast} />}
       </div>
 
-      {/* bottom nav — just the view toggle now */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.navBg, borderTop: `1px solid ${T.navBorder}`, display: "flex", justifyContent: "center", padding: "12px 20px calc(12px + env(safe-area-inset-bottom))", zIndex: 20 }}>
-        <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")} style={navBtnStyle(T, true)}>
-          {viewMode === "list" ? <LayoutGrid size={19} /> : <List size={19} />}
+      {/* bottom nav — Shop / Guides, plus view toggle only on Shop */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: T.navBg, borderTop: `1px solid ${T.navBorder}`, display: "flex", justifyContent: "center", alignItems: "center", gap: 36, padding: "12px 20px calc(12px + env(safe-area-inset-bottom))", zIndex: 20 }}>
+        <button onClick={() => setPage("shop")} style={navBtnStyle(T, page === "shop")} title="Price list">
+          <Home size={19} />
+        </button>
+        {page === "shop" && (
+          <button onClick={() => setViewMode(viewMode === "list" ? "grid" : "list")} style={navBtnStyle(T, false)} title="Toggle list/grid">
+            {viewMode === "list" ? <LayoutGrid size={19} /> : <List size={19} />}
+          </button>
+        )}
+        <button onClick={() => setPage("guides")} style={navBtnStyle(T, page === "guides")} title="Guides & FAQ">
+          <BookOpen size={19} />
         </button>
       </div>
 
@@ -411,6 +479,9 @@ export default function App() {
           <input type="password" autoFocus value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} placeholder="Password" style={inputStyle(T)} />
           {loginError && <p style={{ color: T.danger, fontSize: 12.5, marginTop: 6 }}>{loginError}</p>}
           <button onClick={handleLogin} style={{ ...primaryBtnStyle(T), marginTop: 14 }}>Unlock</button>
+          <p style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 14 }}>
+            Default password is <code>admin123</code> until changed. Client-side lock only — see README for real access control.
+          </p>
         </Modal>
       )}
 
@@ -427,10 +498,24 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: 18, borderTop: `1px solid ${T.cardBorder}`, paddingTop: 14 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 8, color: T.inkMuted }}>Backup & restore</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={backupAll} style={ghostBtnStyle(T)}><DatabaseBackup size={14} /> Download backup</button>
+              <button onClick={() => backupFileInputRef.current && backupFileInputRef.current.click()} style={{ ...ghostBtnStyle(T), color: T.danger, borderColor: T.danger }}>
+                <HardDriveUpload size={14} /> Restore from backup file
+              </button>
+              <input ref={backupFileInputRef} type="file" accept=".json" onChange={restoreFromBackupFile} style={{ display: "none" }} />
+            </div>
+            <p style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}>
+              Backup downloads a JSON file with your prices and guides. Keep it somewhere safe — restoring completely replaces current data and can't be undone.
+            </p>
+          </div>
+
+          <div style={{ marginTop: 18, borderTop: `1px solid ${T.cardBorder}`, paddingTop: 14 }}>
             <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 8, color: T.inkMuted }}>Categories</div>
             {categories.filter((c) => c !== "All").map((cat) => (
               <div key={cat} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <input defaultValue={cat} onFocus={() => (editingRef.current = true)} onBlur={(e) => { editingRef.current = false; renameCategory(cat, e.target.value); }} onKeyDown={(e) => e.key === "Enter" && e.target.blur()} style={{ ...inputStyle(T), flex: 1, fontSize: 13 }} />
+                <input defaultValue={cat} onFocus={() => (editingRef.current = true)} onBlur={(e) => { editingRef.current = false; renameCategory(cat, e.target.value); }} onKeyDown={(e) => e.key === "Enter" && e.target.blur()} style={{ ...inputStyle(T), flex: 1 }} />
                 <button onClick={() => deleteCategory(cat)} style={{ ...iconBtnStyle(T), color: T.danger }}><Trash2 size={14} /></button>
               </div>
             ))}
@@ -462,7 +547,7 @@ export default function App() {
             </div>
             <div style={{ borderTop: `1px solid ${T.cardBorder}`, paddingTop: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Or paste cells directly</div>
-              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"Category\tName\tDescription\tPrice\tUnit\tTerms"} rows={5} style={{ ...inputStyle(T), fontFamily: "monospace", fontSize: 12, resize: "vertical" }} />
+              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={"Category\tName\tDescription\tPrice\tUnit\tTerms"} rows={5} style={{ ...inputStyle(T), fontFamily: "monospace", fontSize: 16, resize: "vertical" }} />
               <button onClick={importFromPaste} style={{ ...primaryBtnStyle(T), marginTop: 8 }}>Import pasted data</button>
             </div>
             {importError && <p style={{ color: T.danger, fontSize: 12.5, background: T.dangerSoft, padding: "8px 10px", borderRadius: 4 }}>{importError}</p>}
@@ -491,7 +576,7 @@ export default function App() {
                   onChange={(e) => setTermsDraft(e.target.value)}
                   rows={6}
                   placeholder="e.g. Garansi 7 hari, tidak untuk digunakan bersamaan di lebih dari 1 perangkat..."
-                  style={{ ...inputStyle(T), width: "100%", fontSize: 13, resize: "vertical" }}
+                  style={{ ...inputStyle(T), width: "100%", resize: "vertical" }}
                 />
                 <button onClick={saveTerms} style={{ ...primaryBtnStyle(T), marginTop: 10 }}>Save terms</button>
               </>
@@ -532,12 +617,14 @@ function ListCard({ item, T, isAdmin, onChange, onDelete, onOpenTerms, onFocusSt
     );
   }
   return (
-    <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 10, display: "flex", gap: 6, alignItems: "center" }}>
-      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 24%", fontSize: 13 }} placeholder="Name" />
-      <input defaultValue={item.description} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ description: e.target.value }); }} style={{ ...inputStyle(T), flex: "1 1 24%", fontSize: 12 }} placeholder="Description" />
-      <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), width: 78, fontSize: 12 }} placeholder="Price" />
-      <button onClick={onOpenTerms} style={iconBtnStyle(T)} title="Edit terms"><FileText size={14} /></button>
-      <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }} title="Delete item"><Trash2 size={14} /></button>
+    <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), width: "100%" }} placeholder="Name" />
+      <input defaultValue={item.description} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ description: e.target.value }); }} style={{ ...inputStyle(T), width: "100%" }} placeholder="Description" />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), flex: 1, minWidth: 0 }} placeholder="Price" />
+        <button onClick={onOpenTerms} style={iconBtnStyle(T)} title="Edit terms"><FileText size={14} /></button>
+        <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }} title="Delete item"><Trash2 size={14} /></button>
+      </div>
     </div>
   );
 }
@@ -559,8 +646,8 @@ function GridCard({ item, T, isAdmin, onChange, onDelete, onOpenTerms, onFocusSt
   }
   return (
     <div style={{ background: T.bgElevated, border: `1px solid ${T.cardBorder}`, borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={{ ...inputStyle(T), fontSize: 12 }} placeholder="Name" />
-      <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={{ ...inputStyle(T), fontSize: 12 }} placeholder="Price" />
+      <input defaultValue={item.name} onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ name: e.target.value }); }} style={inputStyle(T)} placeholder="Name" />
+      <input defaultValue={item.price} type="number" step="1" onFocus={onFocusStart} onBlur={(e) => { onFocusEnd(); onChange({ price: parseFloat(e.target.value) || 0 }); }} style={inputStyle(T)} placeholder="Price" />
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <button onClick={onOpenTerms} style={iconBtnStyle(T)} title="Edit terms"><FileText size={13} /></button>
         <button onClick={onDelete} style={{ ...iconBtnStyle(T), color: T.danger }} title="Delete item"><Trash2 size={13} /></button>
@@ -599,5 +686,5 @@ function primaryBtnStyle(T) {
   return { background: T.accent, color: T.isDark ? "#08131F" : "#F4FAFF", border: "none", borderRadius: 6, padding: "9px 16px", fontSize: 13.5, cursor: "pointer", fontFamily: "'Work Sans', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 };
 }
 function inputStyle(T) {
-  return { border: `1px solid ${T.cardBorder}`, borderRadius: 5, padding: "8px 10px", background: T.bgElevated, color: T.ink, outline: "none", fontFamily: "'Work Sans', sans-serif" };
+  return { border: `1px solid ${T.cardBorder}`, borderRadius: 5, padding: "9px 10px", background: T.bgElevated, color: T.ink, outline: "none", fontFamily: "'Work Sans', sans-serif", fontSize: 16, width: "100%", minWidth: 0, boxSizing: "border-box" };
 }
